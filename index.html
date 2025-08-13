@@ -39,6 +39,10 @@
             border: 2px solid #10b981;
             border-radius: 10px;
             box-shadow: 0 0 30px rgba(16, 185, 129, 0.3);
+            cursor: none; /* Hide cursor when using swipe control */
+        }
+        #gameCanvas.arrow-control {
+            cursor: default;
         }
         .btn-futuristic {
             background: linear-gradient(45deg, #047857, #059669);
@@ -112,8 +116,8 @@
                     <div class="text-xs text-green-300">← → Keys</div>
                 </button>
                 <button id="swipeControl" class="control-option p-4 rounded-lg text-sm">
-                    <div class="font-bold">SWIPE/DRAG</div>
-                    <div class="text-xs text-green-300">Touch & Drag</div>
+                    <div class="font-bold">TOUCH/MOUSE</div>
+                    <div class="text-xs text-green-300">Follow Pointer</div>
                 </button>
             </div>
         </div>
@@ -208,10 +212,12 @@
         let items = [];
         let keys = {};
         let gameSpeed = 2;
-        let touchStartX = 0;
-        let isDragging = false;
-        let spawnTimer = 0;
         let currentLevel = 1;
+        let spawnTimer = 0;
+        
+        // Touch/Mouse control variables
+        let isPointerActive = false;
+        let pointerX = 0;
         
         // Image loading
         let images = {};
@@ -358,23 +364,18 @@
             canvas = document.getElementById('gameCanvas');
             ctx = canvas.getContext('2d');
             
-            // Create basket shadow element
-            createBasketShadow();
-            
-            // Setup touch/swipe controls for canvas
+            // Set canvas cursor based on control type
             if (controlType === 'swipe') {
-                canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
-                canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
-                canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
-                canvas.addEventListener('mousedown', handleMouseDown);
-                canvas.addEventListener('mousemove', handleMouseMove);
-                canvas.addEventListener('mouseup', handleMouseUp);
-            }
-            
-            // Show mobile controls for arrow type
-            if (controlType === 'arrow') {
+                canvas.classList.remove('arrow-control');
+                setupPointerControls();
+            } else {
+                canvas.classList.add('arrow-control');
+                removePointerControls();
                 checkMobileDevice();
             }
+            
+            // Create basket shadow element
+            createBasketShadow();
             
             // Start BGM
             document.getElementById('bgm').play().catch(e => console.log('Audio play failed'));
@@ -382,6 +383,80 @@
             gameState = 'playing';
             resetGame();
             gameLoop();
+        }
+
+        function setupPointerControls() {
+            // Remove mobile controls for swipe mode
+            document.getElementById('mobileControls').classList.add('hidden');
+            
+            // Touch events
+            canvas.addEventListener('touchstart', handlePointerStart, { passive: false });
+            canvas.addEventListener('touchmove', handlePointerMove, { passive: false });
+            canvas.addEventListener('touchend', handlePointerEnd, { passive: false });
+            canvas.addEventListener('touchcancel', handlePointerEnd, { passive: false });
+            
+            // Mouse events
+            canvas.addEventListener('mouseenter', handlePointerStart);
+            canvas.addEventListener('mousemove', handlePointerMove);
+            canvas.addEventListener('mouseleave', handlePointerEnd);
+            canvas.addEventListener('mousedown', handlePointerStart);
+            canvas.addEventListener('mouseup', handlePointerEnd);
+        }
+
+        function removePointerControls() {
+            // Remove all pointer event listeners
+            canvas.removeEventListener('touchstart', handlePointerStart);
+            canvas.removeEventListener('touchmove', handlePointerMove);
+            canvas.removeEventListener('touchend', handlePointerEnd);
+            canvas.removeEventListener('touchcancel', handlePointerEnd);
+            canvas.removeEventListener('mouseenter', handlePointerStart);
+            canvas.removeEventListener('mousemove', handlePointerMove);
+            canvas.removeEventListener('mouseleave', handlePointerEnd);
+            canvas.removeEventListener('mousedown', handlePointerStart);
+            canvas.removeEventListener('mouseup', handlePointerEnd);
+        }
+
+        function handlePointerStart(e) {
+            e.preventDefault();
+            isPointerActive = true;
+            updatePointerPosition(e);
+        }
+
+        function handlePointerMove(e) {
+            e.preventDefault();
+            if (gameState !== 'playing') return;
+            updatePointerPosition(e);
+        }
+
+        function handlePointerEnd(e) {
+            e.preventDefault();
+            isPointerActive = false;
+        }
+
+        function updatePointerPosition(e) {
+            if (gameState !== 'playing') return;
+            
+            const rect = canvas.getBoundingClientRect();
+            let clientX;
+            
+            if (e.type.startsWith('touch')) {
+                if (e.touches && e.touches.length > 0) {
+                    clientX = e.touches[0].clientX;
+                } else if (e.changedTouches && e.changedTouches.length > 0) {
+                    clientX = e.changedTouches[0].clientX;
+                } else {
+                    return;
+                }
+            } else {
+                clientX = e.clientX;
+            }
+            
+            // Convert screen coordinates to canvas coordinates
+            const canvasScale = canvas.width / rect.width;
+            pointerX = (clientX - rect.left) * canvasScale;
+            
+            // Update basket target position directly
+            basketTargetX = Math.max(0, Math.min(canvas.width - basketWidth, pointerX - basketWidth / 2));
         }
 
         function resetGame() {
@@ -393,6 +468,7 @@
             gameSpeed = 2;
             spawnTimer = 0;
             currentLevel = 1;
+            isPointerActive = false;
             document.getElementById('score').textContent = score;
             document.getElementById('level').textContent = currentLevel;
         }
@@ -470,47 +546,6 @@
             keys[e.code] = false;
         }
 
-        function handleTouchStart(e) {
-            e.preventDefault();
-            const touch = e.touches[0];
-            const rect = canvas.getBoundingClientRect();
-            touchStartX = touch.clientX - rect.left;
-            isDragging = true;
-        }
-
-        function handleTouchMove(e) {
-            e.preventDefault();
-            if (!isDragging) return;
-            
-            const touch = e.touches[0];
-            const rect = canvas.getBoundingClientRect();
-            const currentX = touch.clientX - rect.left;
-            basketX = Math.max(0, Math.min(canvas.width - basketWidth, currentX - basketWidth / 2));
-        }
-
-        function handleTouchEnd(e) {
-            e.preventDefault();
-            isDragging = false;
-        }
-
-        function handleMouseDown(e) {
-            const rect = canvas.getBoundingClientRect();
-            touchStartX = e.clientX - rect.left;
-            isDragging = true;
-        }
-
-        function handleMouseMove(e) {
-            if (!isDragging) return;
-            
-            const rect = canvas.getBoundingClientRect();
-            const currentX = e.clientX - rect.left;
-            basketX = Math.max(0, Math.min(canvas.width - basketWidth, currentX - basketWidth / 2));
-        }
-
-        function handleMouseUp(e) {
-            isDragging = false;
-        }
-
         // Dynamic spawn rate based on score
         function getSpawnRate() {
             // Base spawn rate starts at 0.015
@@ -563,9 +598,10 @@
 
             // Smooth basket movement
             const diff = basketTargetX - basketX;
-            basketX += diff * 0.15; // Smooth interpolation
+            const smoothing = controlType === 'swipe' ? 0.25 : 0.15; // More responsive for touch control
+            basketX += diff * smoothing;
             
-            // Update basket position (arrow keys)
+            // Update basket position (arrow keys only)
             if (controlType === 'arrow') {
                 if (keys['ArrowLeft'] && basketTargetX > 0) {
                     basketTargetX -= 8;
@@ -670,6 +706,24 @@
             // Draw basket highlight
             ctx.fillStyle = '#34d399';
             ctx.fillRect(basketX + shakeOffsetX + 2, basketY + shakeOffsetY + 2, basketWidth - 4, 8);
+
+            // Draw pointer indicator for swipe control
+            if (controlType === 'swipe' && gameState === 'playing') {
+                ctx.fillStyle = 'rgba(16, 185, 129, 0.3)';
+                ctx.fillRect(pointerX - 2, 0, 4, canvas.height);
+                
+                // Draw pointer dot
+                ctx.fillStyle = '#10b981';
+                ctx.beginPath();
+                ctx.arc(pointerX, 30, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#10b981';
+                ctx.beginPath();
+                ctx.arc(pointerX, 30, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
 
             // Draw items with images (no outlines)
             items.forEach(item => {
@@ -824,6 +878,7 @@
             
             // Clean up
             if (basketShadow) basketShadow.remove();
+            removePointerControls();
             
             // Reset state
             gameState = 'menu';
